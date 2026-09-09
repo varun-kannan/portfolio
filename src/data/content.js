@@ -19,19 +19,6 @@ export const MARQUEE = [
 export const WORK = [
   {
     id: 'W—05',
-    title: 'Auth Gateway & acquirer integration',
-    role: 'Primary author · PCI-DSS scope',
-    when: 'Feb 2022 — present',
-    body: [
-      'Encrypted transport, ISO 8583 message building, PIN translation through a hardware security module, and response mapping — written from scratch inside an environment where card data has to be impossible to leak, not just unlikely.',
-      'Three acquirers live and certified end to end. Every provider speaks a dialect; the shared library absorbs most of it, but certification is still weeks in a lab, not a config change.',
-    ],
-    seam: 'Every acquirer speaks a dialect. The shared library absorbs most of it — certification is still weeks in a lab.',
-    metrics: '1M+ transactions/month · 200+ peak TPS · <500 ms p99 · EMV L3 certified',
-    tags: ['TypeScript', 'Fastify', 'ISO 8583', 'HSM · DUKPT', 'PCI DSS'],
-  },
-  {
-    id: 'W—04',
     title: 'Terminal Management System',
     role: 'Owner · 1,088 commits',
     when: '2022 — present',
@@ -44,19 +31,7 @@ export const WORK = [
     tags: ['NestJS', 'PostgreSQL', 'Redis', 'MQTT'],
   },
   {
-    id: 'W—03',
-    title: 'Offline card acceptance',
-    role: 'Double-Up · CheckoutX · surflink',
-    when: '2023 — present',
-    body: [
-      'Merchants on weak coverage were losing sales outright. Accepting a card offline moves the risk decision onto the device itself — and a crash mid-queue must never double-charge or quietly lose a sale.',
-      'Built across the terminal, the app and the backend. Offline trades certainty for availability; it only works because settlement expects the mess and absorbs it.',
-    ],
-    metrics: '170k+ offline payments settled · no duplicates',
-    tags: ['Kotlin', 'Flutter', 'EMV · BER-TLV', 'SoftPOS'],
-  },
-  {
-    id: 'W—02',
+    id: 'W—04',
     title: 'Terminal Director & SurfSignal',
     role: 'Connection server · event backbone',
     when: '2023 — present',
@@ -67,7 +42,7 @@ export const WORK = [
     tags: ['Express', 'Redis Streams', 'gRPC'],
   },
   {
-    id: 'W—01',
+    id: 'W—03',
     title: 'Software Manager & Task Manager',
     role: 'Release pipeline · fleet telemetry',
     when: '2024 — present',
@@ -75,6 +50,31 @@ export const WORK = [
       'Releases to 25,000 live devices, where an infrastructure failure retries in place and a rejection starts clean. Fleet commands and telemetry aggregate in memory, so the database never carries the write load.',
     ],
     tags: ['NestJS', 'Redis', 'State machines'],
+  },
+  {
+    id: 'W—02',
+    title: 'Auth Gateway & acquirer integration',
+    role: 'Primary author · PCI-DSS scope',
+    when: 'Feb 2022 — present',
+    body: [
+      'Encrypted transport, ISO 8583 message building, PIN translation through a hardware security module, and response mapping — written from scratch inside an environment where card data has to be impossible to leak, not just unlikely.',
+      'Three acquirers live and certified end to end. Every provider speaks a dialect; the shared library absorbs most of it, but certification is still weeks in a lab, not a config change.',
+    ],
+    seam: 'Every acquirer speaks a dialect. The shared library absorbs most of it — certification is still weeks in a lab.',
+    metrics: '1M+ transactions/month · 200+ peak TPS · <500 ms p99 · EMV L3 certified',
+    tags: ['TypeScript', 'Fastify', 'ISO 8583', 'HSM · DUKPT', 'PCI DSS'],
+  },
+  {
+    id: 'W—01',
+    title: 'Offline card acceptance',
+    role: 'Double-Up · CheckoutX · surflink',
+    when: '2023 — present',
+    body: [
+      'Merchants on weak coverage were losing sales outright. Accepting a card offline moves the risk decision onto the device itself — and a crash mid-queue must never double-charge or quietly lose a sale.',
+      'Built across the terminal, the app and the backend. Offline trades certainty for availability; it only works because settlement expects the mess and absorbs it.',
+    ],
+    metrics: '170k+ offline payments settled · no duplicates',
+    tags: ['Kotlin', 'Flutter', 'EMV · BER-TLV', 'SoftPOS'],
   },
 ];
 

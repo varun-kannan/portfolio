@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { applyTheme } from './theme';
 import { useReveal } from './hooks/useMotion';
 import { useScene, useScrollSpy } from './hooks/useScene';
-import { Texture, CursorGlow, Nav } from './components/Chrome';
+import Boot from './components/Boot';
+import { Texture, Sheen, Nav } from './components/Chrome';
 import { Hero, Marquee, Work, Experience, Capabilities, Independent, Approach, Contact } from './components/Sections';
 import { SECTIONS } from './data/content';
 
@@ -26,7 +27,7 @@ export default function App() {
     try { localStorage.setItem(STORE_KEY, theme); } catch { /* non-fatal */ }
   }, [theme]);
 
-  const toggle = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
+  const onTheme = useCallback((t) => setTheme(t), []);
 
   useReveal();
   useScene();
@@ -34,10 +35,11 @@ export default function App() {
 
   return (
     <>
+      <Boot />
       <div id="scrollprog" aria-hidden="true" />
       <Texture />
-      <CursorGlow />
-      <Nav theme={theme} onToggle={toggle} active={active} />
+      <Sheen />
+      <Nav theme={theme} onTheme={onTheme} active={active} />
       <Hero />
       <Marquee />
       <Work />

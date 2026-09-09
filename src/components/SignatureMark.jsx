@@ -1,20 +1,28 @@
 import { useEffect, useRef } from 'react';
+import { nhash, scatter, easeOut } from '../lib/field';
 
 /**
- * Dotted signature mark that writes itself.
+ * Dotted signature mark that assembles.
  *
  * The wordmark is set in Bodoni Moda Italic — the display face already loaded
  * for the headings — rasterised to an offscreen buffer, then sampled on a fine
  * lattice so the glyphs are rebuilt out of dots. A hand-drawn flourish is
  * sampled along a bezier and appended.
  *
- * Dots are ordered left-to-right and revealed over time, with a bright nib at
- * the leading edge, so it reads as being written rather than fading in.
+ * The dots arrive from a coherent scatter field and converge, the same
+ * movement as the wordmark in the hero. Position is closed-form rather than
+ * integrated: there are a few thousand dots here and no reason to carry
+ * velocity state for a motion that only ever plays forwards. Dots still in
+ * flight are drawn in the accent, settling to ink as they land, which keeps
+ * the ink-developing idea from the hero mark.
+ *
+ * It replays every time it scrolls back into view.
  */
 const TEXT = 'Varun N';
 const GAP = 3.3;          // fine enough that Bodoni's hairlines survive
-const ALPHA_MIN = 95;   // catch antialiased thin strokes
-const SPEED = 620;        // dots per second
+const ALPHA_MIN = 95;     // catch antialiased thin strokes
+const DUR = 950;          // travel time for one dot
+const STAGGER = 780;      // spread of release times across the mark
 
 // terminal flourish, in normalised 0..1 space
 const FLOURISH = [
@@ -80,10 +88,17 @@ export default function SignatureMark({ width = 520, height = 190 }) {
 
       const px = g.getImageData(0, 0, width, height).data;
       const out = [];
+      const add = (x, y) => {
+        const [ox, oy] = scatter(x, y, 55, 150);
+        out.push({
+          hx: x, hy: y, ox, oy,
+          hold: (x / width) * STAGGER + nhash(x | 0, y | 0) * 180,
+        });
+      };
       for (let y = 0; y < height; y += GAP) {
         for (let x = 0; x < width; x += GAP) {
           const o = ((y | 0) * width + (x | 0)) * 4;
-          if (px[o + 3] > ALPHA_MIN) out.push([x, y]);
+          if (px[o + 3] > ALPHA_MIN) add(x, y);
         }
       }
 
@@ -94,46 +109,72 @@ export default function SignatureMark({ width = 520, height = 190 }) {
         const [nx, ny] = cubicAt(f0, f1, f2, f3, s / 220);
         const x = nx * width, y = ny * height * 0.86;
         if (y >= height) continue;
-        if (!prev) { out.push([x, y]); prev = [x, y]; continue; }
+        if (!prev) { add(x, y); prev = [x, y]; continue; }
         carry += Math.hypot(x - prev[0], y - prev[1]);
-        if (carry >= GAP * 2.0) { out.push([x, y]); carry = 0; }
+        if (carry >= GAP * 2.0) { add(x, y); carry = 0; }
         prev = [x, y];
       }
-
-      // written left to right
-      out.sort((a, b) => a[0] - b[0]);
       return out;
     };
 
-    const render = (count) => {
+    /**
+     * @param at  ms since the run began; Infinity draws the settled mark.
+     * @returns   whether anything is still moving
+     */
+    const render = (at) => {
       const { ink, nib } = colors();
       ctx.clearRect(0, 0, width, height);
-      const n = Math.min(count, dots.length);
-      for (let i = 0; i < n; i++) {
-        const [x, y] = dots[i];
-        const fromHead = count - i;
-        const isNib = !done && fromHead < 40;
+      let busy = false;
+      // in flight, collected so the two colours are each one path and one fill
+      const flying = [];
+
+      ctx.beginPath();
+      for (let i = 0; i < dots.length; i++) {
+        const d = dots[i];
+        const p = (at - d.hold) / DUR;
+        if (p <= 0) { busy = true; continue; }
+        const e = p >= 1 ? 1 : easeOut(p);
+        if (p < 1) busy = true;
+        const x = d.hx + d.ox * (1 - e);
+        const y = d.hy + d.oy * (1 - e);
+        const r = 0.98 * e;
+        if (e < 0.84) { flying.push(x, y, r); continue; }
+        ctx.moveTo(x + r, y);
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+      }
+      ctx.fillStyle = ink;
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+
+      if (flying.length) {
         ctx.beginPath();
-        ctx.fillStyle = isNib ? nib : ink;
-        ctx.globalAlpha = isNib ? 0.95 : 0.85;
-        ctx.arc(x, y, isNib ? 1.05 + (1 - fromHead / 40) * 0.85 : 0.98, 0, Math.PI * 2);
+        for (let i = 0; i < flying.length; i += 3) {
+          ctx.moveTo(flying[i] + flying[i + 2], flying[i + 1]);
+          ctx.arc(flying[i], flying[i + 1], flying[i + 2], 0, Math.PI * 2);
+        }
+        ctx.fillStyle = nib;
+        ctx.globalAlpha = 0.95;
         ctx.fill();
       }
       ctx.globalAlpha = 1;
+      return busy;
     };
 
     const frame = (ts) => {
+      raf = 0;
       if (!started) started = ts;
-      const count = Math.floor(((ts - started) / 1000) * SPEED);
-      progressed = count;
-      render(count);
-      if (count < dots.length) raf = requestAnimationFrame(frame);
-      else { done = true; render(dots.length); }
+      progressed = ts - started;
+      const busy = render(progressed);
+      if (busy) raf = requestAnimationFrame(frame);
+      else done = true;
     };
 
     const start = () => {
-      if (raf || done || !dots.length) return;
+      if (!dots.length) return;
+      if (raf) cancelAnimationFrame(raf);
       started = 0;
+      done = false;
+      progressed = 0;
       raf = requestAnimationFrame(frame);
     };
 
@@ -146,23 +187,26 @@ export default function SignatureMark({ width = 520, height = 190 }) {
 
       if (matchMedia('(prefers-reduced-motion:reduce)').matches) {
         done = true;
-        render(dots.length);
+        render(Infinity);
         return;
       }
       render(0);
 
       if ('IntersectionObserver' in window) {
-        io = new IntersectionObserver(
-          (es) => es.forEach((en) => { if (en.isIntersecting) { start(); io.disconnect(); } }),
-          { threshold: 0.35 }
-        );
+        let was = false;
+        io = new IntersectionObserver((es) => es.forEach((en) => {
+          // Replays on every entry rather than disconnecting after the first,
+          // so it behaves like every other mark on the page.
+          if (en.isIntersecting && !was) start();
+          was = en.isIntersecting;
+        }), { threshold: 0.35 });
         io.observe(canvas);
       } else start();
 
       safety = setTimeout(start, 2600);
       // if frames never run (backgrounded tab), show it complete
       fallback = setTimeout(() => {
-        if (!done && progressed === 0) { done = true; render(dots.length); }
+        if (!done && progressed === 0) { done = true; render(Infinity); }
       }, 4200);
     };
 
@@ -172,8 +216,8 @@ export default function SignatureMark({ width = 520, height = 190 }) {
       document.fonts.load(font, TEXT).then(init).catch(init);
     } else init();
 
-    const mo = new MutationObserver(() => { if (dots.length) render(done ? dots.length : 0); });
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-accent'] });
+    const mo = new MutationObserver(() => { if (dots.length) render(done ? Infinity : progressed); });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     return () => {
       cancelled = true;

@@ -1,23 +1,31 @@
 import { useEffect, useRef } from 'react';
-import DotField from './DotField';
-import { useMotionAllowed, useMagnetic } from '../hooks/useMotion';
+import PaperSurface from './PaperSurface';
+import { useMotionAllowed } from '../hooks/useMotion';
 import { SECTIONS } from '../data/content';
 
-/** Fixed multi-plane paper texture. Each plane parallaxes at its own rate. */
+/**
+ * The ground.
+ *
+ * There is no lattice here any more. A dot grid is geometry, and the eye keeps
+ * re-reading geometry as information — it competed with the type, and its
+ * pointer halo read as a separate effect sitting on top of the page rather
+ * than as the surface the page is printed on. What is left is a generated
+ * sheet, a grain pass, and an edge fall-off: all organic, none of it
+ * repeating, so it stops being looked at and starts being stood on.
+ */
 export function Texture() {
   return (
-    <div className="tex" aria-hidden="true">
-      <div className="par" data-par="10" data-pn="-0.8"><div className="tex-glow" /></div>
-      <DotField />
-      <div className="tex-cols">
-        {Array.from({ length: 6 }, (_, i) => <span key={i} />)}
+    <>
+      <PaperSurface />
+      <div className="tex" aria-hidden="true">
+        <div className="tex-grain" />
+        <div className="tex-vig" />
       </div>
-      <div className="par" data-par="16" data-pn="0.6"><div className="tex-fibre" /></div>
-      <div className="par" data-par="8" data-pn="-0.4"><div className="tex-grid" /></div>
-      <div className="tex-hatch" />
-      <div className="tex-vig" />
-      <div className="tex-grain" />
-    </div>
+      {/* The margin frame: two dashed verticals standing exactly on the
+          content column's edges, so the page reads as printed inside a
+          measured area rather than floating on it. */}
+      <div className="frame" aria-hidden="true"><div><span /><span /></div></div>
+    </>
   );
 }
 
@@ -28,16 +36,20 @@ export function TextureInverted() {
       <div className="tex-glow" />
       <div className="tex-fibre" />
       <div className="tex-dots" />
-      <div className="tex-cols">
-        {Array.from({ length: 6 }, (_, i) => <span key={i} />)}
-      </div>
       <div className="tex-hatch" />
       <div className="tex-grain" />
     </div>
   );
 }
 
-export function CursorGlow() {
+/**
+ * A soft light travelling over the sheet with the pointer.
+ *
+ * Not a coloured halo — white, blended soft-light — so it reads as a lamp
+ * above paper rather than as a glow drawn on the page. It lifts the grain it
+ * passes over and leaves the type untouched.
+ */
+export function Sheen() {
   const ref = useRef(null);
   const allowed = useMotionAllowed();
   useEffect(() => {
@@ -53,37 +65,75 @@ export function CursorGlow() {
     addEventListener('pointermove', move, { passive: true });
     return () => { removeEventListener('pointermove', move); cancelAnimationFrame(raf); };
   }, [allowed]);
-  return <div className="glow" ref={ref} aria-hidden="true" />;
+  return <div className="sheen" ref={ref} aria-hidden="true" />;
 }
 
-export function Nav({ theme, onToggle, active }) {
-  const btnRef = useMagnetic({ strength: 8 });
+/**
+ * Availability light. A steady core with two expanding rings on a long,
+ * offset cycle — the cadence of a status LED rather than a blink. It is
+ * green in both schemes and deliberately NOT the accent: "available" has to
+ * read the same whichever accent is selected.
+ */
+export function Beacon({ children = 'Open to work', inverted }) {
   return (
-    <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: 'var(--bg)', borderBottom: '1px solid var(--fg)' }}>
-      <div className="wrap" style={{ paddingTop: 14, paddingBottom: 14, display: 'flex', alignItems: 'center', gap: 34, flexWrap: 'wrap', rowGap: 12 }}>
-        <a href="#top" style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-.02em' }}>VN</a>
-        <div className="navlinks m" style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+    <span className={`avail${inverted ? ' avail-inv' : ''}`}>
+      <span className="beacon" aria-hidden="true"><i /></span>
+      {children}
+    </span>
+  );
+}
+
+function ModeSwitch({ theme, onTheme }) {
+  return (
+    <div className="modesw" role="radiogroup" aria-label="Colour scheme">
+      {/* the thumb is the moving part; the labels never move */}
+      <span className="modesw-thumb" data-at={theme} aria-hidden="true" />
+      {['light', 'dark'].map((k) => (
+        <button
+          key={k}
+          type="button"
+          role="radio"
+          aria-checked={theme === k}
+          aria-label={`${k === 'dark' ? 'Dark' : 'Light'} theme`}
+          className="m modesw-opt"
+          data-on={theme === k ? '1' : undefined}
+          onClick={() => onTheme(k)}
+        >
+          <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" focusable="false">
+            {k === 'light' ? (
+              <g fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
+                <circle cx="6" cy="6" r="2.4" />
+                <path d="M6 .8v1.3M6 9.9v1.3M11.2 6H9.9M2.1 6H.8M9.7 2.3l-.9.9M3.2 8.8l-.9.9M9.7 9.7l-.9-.9M3.2 3.2l-.9-.9" />
+              </g>
+            ) : (
+              <path fill="currentColor" d="M10.4 7.6A4.8 4.8 0 0 1 4.4 1.6a4.9 4.9 0 1 0 6 6Z" />
+            )}
+          </svg>
+          <span>{k === 'dark' ? 'Dark' : 'Light'}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Nav({ theme, onTheme, active }) {
+  return (
+    <nav className="topnav">
+      <div className="wrap topnav-in">
+        <a href="#top" className="asm" style={{ '--d': '0ms', fontSize: 17, fontWeight: 700, letterSpacing: '-.02em' }}>VN</a>
+
+        <div className="navlinks m asm" style={{ '--d': '60ms' }}>
           {SECTIONS.map(([id, label]) => (
             <a key={id} className="navlink" href={`#${id}`} data-on={active === id ? '1' : undefined}>
               {label}
             </a>
           ))}
         </div>
-        <div className="navmeta m" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 22, color: 'var(--muted)' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="dot" />Open to work</span>
-          <span>Chennai, India · UTC+5:30</span>
-        </div>
-        <div className="navright" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
-        <button
-          ref={btnRef}
-          className="themebtn m"
-          type="button"
-          onClick={onToggle}
-          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-        >
-          <span className="dot" />
-          <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
-        </button>
+
+        <div className="navright asm" style={{ '--d': '120ms' }}>
+          <Beacon />
+          <span className="m navplace">Chennai · UTC+5:30</span>
+          <ModeSwitch theme={theme} onTheme={onTheme} />
         </div>
       </div>
     </nav>
@@ -92,7 +142,7 @@ export function Nav({ theme, onToggle, active }) {
 
 export function SectionHead({ index, title, em, aside }) {
   return (
-    <div className="rv dev" style={{ position: 'relative', display: 'flex', alignItems: 'baseline', gap: 34, flexWrap: 'wrap' }}>
+    <div className="asm" style={{ position: 'relative', display: 'flex', alignItems: 'baseline', gap: 34, flexWrap: 'wrap' }}>
       <span className="m" style={{ color: 'var(--muted)', minWidth: 170 }}>{index}</span>
       <h2 style={{ fontSize: 'clamp(30px,4.2vw,62px)' }}>
         {title} <em style={{ fontStyle: 'italic', fontWeight: 400 }}>{em}</em>.

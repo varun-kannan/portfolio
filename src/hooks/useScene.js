@@ -11,6 +11,9 @@ import { useMotionAllowed } from './useMotion';
  *   .tilt-scroll  rotateX driven by distance from viewport centre
  *   .z-drift    pushed along z as it crosses the viewport
  *   .par-y      foreground content drifting against the scroll (data-py = px)
+ *   .plane      a surface that leans toward the cursor (data-plane = degrees),
+ *               measured against ITS OWN centre rather than the viewport's, so
+ *               the lean tracks where the pointer is on the thing itself
  */
 export function useScene() {
   const allowed = useMotionAllowed();
@@ -29,6 +32,9 @@ export function useScene() {
     const prog = document.getElementById('scrollprog');
 
     let mx = 0, my = 0, raf = 0;
+    // absolute pointer, for transforms measured against an element's own box
+    let ax = 0, ay = 0, hasPointer = false;
+    const planes = [...document.querySelectorAll('.plane')];
 
     const paint = () => {
       raf = 0;
@@ -72,6 +78,24 @@ export function useScene() {
         el.style.transform = `translate3d(0,${(-p * amt).toFixed(1)}px,0)`;
       });
 
+      // A plane leans toward the cursor. Unlike .par it is measured against
+      // its own rect: leaning by where the pointer sits on the page would
+      // have every plane leaning the same way at once, which reads as the
+      // page tipping rather than as separate surfaces catching the light.
+      if (hasPointer) {
+        planes.forEach((el) => {
+          const r = el.getBoundingClientRect();
+          if (!r.width || !r.height) return;
+          if (r.bottom < -200 || r.top > vh + 200) return;   // off screen
+          const px = Math.max(-1, Math.min(1, ((ax - r.left) / r.width - 0.5) * 2));
+          const py = Math.max(-1, Math.min(1, ((ay - r.top) / r.height - 0.5) * 2));
+          const amt = parseFloat(el.dataset.plane) || 5;
+          el.style.transform =
+            `rotateY(${(px * amt).toFixed(2)}deg) rotateX(${(-py * amt * 0.55).toFixed(2)}deg)` +
+            ` translateZ(${(Math.abs(px) * 8).toFixed(1)}px)`;
+        });
+      }
+
       drifts.forEach((d) => {
         const r = d.getBoundingClientRect();
         const p = Math.max(-1, Math.min(1, (vh / 2 - (r.top + r.height / 2)) / vh));
@@ -86,6 +110,8 @@ export function useScene() {
     const onPointer = (e) => {
       mx = e.clientX / innerWidth - 0.5;
       my = e.clientY / innerHeight - 0.5;
+      ax = e.clientX; ay = e.clientY;
+      hasPointer = true;
       queue();
     };
 
