@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { nhash, scatter, easeOut } from '../lib/field';
+import { nhash, scatter, easeOut, afterBoot } from '../lib/field';
 
 const DUR = 1150;         // travel time for one dot
 const STAGGER = 900;      // spread of release times, keyed on radius
@@ -8,7 +8,7 @@ const MAX_R = SPACING * 0.78;              // dot radius at full white
 const SCREEN_ANGLE = (17 * Math.PI) / 180; // printers rotate the screen off-axis
 const FLOOR = 0.05;
 
-// SHARED ARTWORK MATH — kept identical between the component and the offline preview.
+// SHARED ARTWORK MATH - kept identical between the component and the offline preview.
 // Returns luminance 0..1 for a pixel. Subject: a wireframe globe, lit from the
 // upper left, tilted on its axis, bleeding off the right edge.
 function artworkLuma(x, y, w, h) {
@@ -58,12 +58,12 @@ function artworkLuma(x, y, w, h) {
  * A real screening pipeline: artwork is rasterised into an offscreen buffer,
  * then that buffer's luminance is sampled through a rotated dot lattice, each
  * dot's radius set by the tone underneath it. Because the source is pixels,
- * `paintArtwork` can be replaced with `drawImage(photo, …)` and a real
+ * `paintArtwork` can be replaced with `drawImage(photo, ...)` and a real
  * photograph screens through exactly the same path.
  *
  * The screen assembles: dots arrive from the shared scatter field and
  * converge, released outward from the globe's centre so the sphere builds
- * from its core rather than appearing all at once. Position is closed-form —
+ * from its core rather than appearing all at once. Position is closed-form -
  * there are on the order of twenty thousand dots here, and carrying velocity
  * state for a motion that only plays forwards would cost far more than it
  * buys. It replays every time the slab scrolls back into view.
@@ -203,7 +203,13 @@ export default function HalftoneBackdrop() {
     };
 
     readInk();
-    resize();
+    // Screening this means a getImageData over millions of pixels plus a walk
+    // of the whole rotated lattice. It is below the fold, so it waits until
+    // the curtain is out of the way rather than stealing the loader's frames.
+    let ready = false;
+    // 2600, not sooner: measured, this build is one ~60ms frame, and at 1100ms
+    // it landed in the middle of the hero assembling and stuttered it.
+    const cancelBoot = afterBoot(() => { ready = true; resize(); }, 2600);
 
     let io = null, fallback = 0;
     if ('IntersectionObserver' in window) {
@@ -215,12 +221,15 @@ export default function HalftoneBackdrop() {
       io.observe(canvas);
     } else play();
 
-    // if frames never run — hidden tab, throttled rAF — show it complete
+    // if frames never run - hidden tab, throttled rAF - show it complete
     fallback = setTimeout(() => {
       if (!done && progressed === 0) { done = true; render(Infinity); }
     }, 4200);
 
-    const ro = new ResizeObserver(resize);
+    // A ResizeObserver reports once as soon as observe() is called. Unguarded,
+    // that initial report ran the full screen at mount and silently undid the
+    // deferral above.
+    const ro = new ResizeObserver(() => { if (ready) resize(); });
     if (canvas.parentElement) ro.observe(canvas.parentElement);
     const mo = new MutationObserver(() => { readInk(); draw(); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -228,6 +237,7 @@ export default function HalftoneBackdrop() {
     return () => {
       if (raf) cancelAnimationFrame(raf);
       if (io) io.disconnect();
+      cancelBoot();
       clearTimeout(fallback);
       ro.disconnect();
       mo.disconnect();

@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { nhash, scatter, easeOut } from '../lib/field';
+import { nhash, scatter, easeOut, afterBoot } from '../lib/field';
 
 /**
  * Dotted signature mark that assembles.
  *
- * The wordmark is set in Bodoni Moda Italic — the display face already loaded
- * for the headings — rasterised to an offscreen buffer, then sampled on a fine
+ * The wordmark is set in Bodoni Moda Italic - the display face already loaded
+ * for the headings - rasterised to an offscreen buffer, then sampled on a fine
  * lattice so the glyphs are rebuilt out of dots. A hand-drawn flourish is
  * sampled along a bezier and appended.
  *
@@ -212,15 +212,20 @@ export default function SignatureMark({ width = 520, height = 190 }) {
 
     // the glyphs are wrong unless the display face has actually loaded
     const font = `italic 600 ${Math.round(height * 0.62)}px "Bodoni Moda"`;
-    if (document.fonts && document.fonts.load) {
-      document.fonts.load(font, TEXT).then(init).catch(init);
-    } else init();
+    const begin = () => {
+      if (document.fonts && document.fonts.load) {
+        document.fonts.load(font, TEXT).then(init).catch(init);
+      } else init();
+    };
+    // below the fold, so it waits for the curtain like the other heavy builds
+    const cancelBoot = afterBoot(begin, 1500);
 
     const mo = new MutationObserver(() => { if (dots.length) render(done ? Infinity : progressed); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     return () => {
       cancelled = true;
+      cancelBoot();
       if (raf) cancelAnimationFrame(raf);
       if (io) io.disconnect();
       clearTimeout(safety);

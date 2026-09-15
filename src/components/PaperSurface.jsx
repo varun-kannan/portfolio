@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { afterBoot } from '../lib/field';
 
 /**
  * Generated paper surface.
@@ -11,7 +12,7 @@ import { useEffect, useRef } from 'react';
  * The sheet is built from five things, in the order light actually encounters
  * a piece of paper:
  *
- *   COCKLE   very low frequency undulation — the sheet is not flat, and the
+ *   COCKLE   very low frequency undulation - the sheet is not flat, and the
  *            broad soft waves in it catch the light. This is the single
  *            biggest cue that the surface has thickness.
  *   MOTTLE   the tonal drift of uneven pulp density across the sheet.
@@ -23,7 +24,7 @@ import { useEffect, useRef } from 'react';
  *   AGE      foxing blooms and an edge fall-off.
  *
  * Cost. The first two vary far too slowly to be worth a per-pixel noise
- * lookup, so they are computed once on a coarse grid and bilinearly sampled —
+ * lookup, so they are computed once on a coarse grid and bilinearly sampled -
  * which cuts the per-pixel work by more than half and pays for everything
  * added here. Only the high-frequency layers run per pixel.
  */
@@ -33,7 +34,7 @@ import { useEffect, useRef } from 'react';
 //
 // Math.imul is not decoration. Written with plain `*`, the intermediate
 // products run past 2^53, lose their low bits to float rounding, and the
-// following coercion to int32 clips the top bit — the result only ever
+// following coercion to int32 clips the top bit - the result only ever
 // covers [0, 0.5] with a mean of 0.25 instead of [0, 1] with a mean of 0.5.
 // Every field built on it then ran at half amplitude AND carried a large
 // negative DC offset, which is why the sheet used to render about 9% darker
@@ -71,6 +72,7 @@ const LOW = 8;              // coarse-grid spacing, in CSS px
 const SCR_C = 0.96593, SCR_S = 0.25882;
 const SCR_INV = 1 / 7.5, SCR_R2 = 0.085;
 const BUDGET = 2.2e6;       // device pixels we are willing to generate
+const SLICE_MS = 6;         // per slice, leaving the rest of a 16ms frame free
 
 /**
  * @param scoped  fill the parent element instead of the viewport, so a slab
@@ -87,7 +89,14 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let w = 0, h = 0, raf = 0;
+    let w = 0, h = 0, raf = 0, generation = 0;
+    // MessageChannel rather than rAF or setTimeout to yield between slices:
+    // rAF never fires in a hidden tab, and nested setTimeouts get clamped to
+    // 4ms each, which would stretch a sheet across a second or more.
+    const chan = new MessageChannel();
+    let next = null;
+    chan.port1.onmessage = () => { const f = next; next = null; if (f) f(); };
+    const yieldTo = (f) => { next = f; chan.port2.postMessage(0); };
 
     const readVars = () => {
       const cs = getComputedStyle(document.documentElement);
@@ -100,7 +109,7 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
       return {
         base: str('base', '#EDE8DC'),
         ink: str('ink', '#8A7A5E'),
-        // amplitudes stay small on purpose — this is a surface, not a pattern
+        // amplitudes stay small on purpose - this is a surface, not a pattern
         mottle: num('mottle', 0.055),
         fibre: num('fibre', 0.028),
         laid: num('laid', 0.018),
@@ -137,7 +146,7 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
       // paper: a sheet reflects a proportion of the light falling on it. But
       // proportion is exactly the problem on a dark ground. A 5% swing on
       // limestone (base 239) is 12 levels and plainly visible; the same 5%
-      // on carbon (base 21) is one level — under the quantisation step,
+      // on carbon (base 21) is one level - under the quantisation step,
       // never mind the eye. Raising the dark amplitudes does almost nothing,
       // because they are being multiplied by a very small number.
       //
@@ -155,8 +164,6 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
       const dpr = Math.min(devicePixelRatio || 1, 2);
       const S = w * h * dpr * dpr <= BUDGET ? dpr : Math.max(1, Math.sqrt(BUDGET / (w * h)));
       const cw = Math.round(w * S), chh = Math.round(h * S);
-      canvas.width = cw;
-      canvas.height = chh;
       canvas.style.width = w + 'px';
       canvas.style.height = h + 'px';
 
@@ -194,7 +201,7 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
       }
       // The slope of a very low frequency field across an 8px step is tiny,
       // so the raw value is meaningless as an amplitude. Normalise it to
-      // ±1 and let --paper-cockle state the luminance swing directly.
+      // +-1 and let --paper-cockle state the luminance swing directly.
       for (let i = 0; i < ckShade.length; i++) ckShade[i] /= ckMax;
       // The three coarse channels are sampled at the same point every
       // pixel, so the index and the four interpolation weights are computed
@@ -208,7 +215,17 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
       const maxR2 = cxp * cxp + cyp * cyp;
       const inv = 1 / S;
 
-      for (let py = 0; py < chh; py++) {
+      // Sliced across tasks. Done in one go this pass held the main thread for
+      // 125ms and more, which froze the loader for over half a second in a
+      // measured trace, and froze the page again on every theme toggle. Each
+      // slice runs a few milliseconds and yields; the canvas is only resized
+      // and painted once the whole sheet is ready, so nothing half-drawn shows.
+      const token = ++generation;
+      let py = 0;
+      const slice = () => {
+        if (token !== generation) return;   // superseded, or unmounted
+        const until = performance.now() + SLICE_MS;
+      for (; py < chh; py++) {
         const y = py * inv;                 // CSS-space coordinate
         const dy = y - cyp;
         const fy = y / LOW + 1, gy0 = fy | 0, ty = fy - gy0;
@@ -230,7 +247,7 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
           // reverted: one Math.sin per pixel cost more than the whole tooth.
           const l = valueNoise(x * 1.5, y * 0.04) - 0.5;
 
-          // Chain lines — the widely spaced mould wires a laid sheet is
+          // Chain lines - the widely spaced mould wires a laid sheet is
           // couched on, where the pulp lies thinner and the paper is a shade
           // brighter. A triangle wave raised to the eighth, which narrows it
           // to a hairline, and warped by the mottle field so it never runs
@@ -245,7 +262,7 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
           //
           // A sheet that has been PRINTED carries the screen it was printed
           // with. Rotated 15° so it never lines up with the layout, and its
-          // strength ridden by the mottle field so the ink lies unevenly —
+          // strength ridden by the mottle field so the ink lies unevenly -
           // which is both what old printing looks like and what stops a beat
           // establishing itself against the wordmark's own halftone.
           const rx = (x * SCR_C - y * SCR_S) * SCR_INV;
@@ -259,7 +276,7 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
             if (ink > 0) scr = (1 - sdd / SCR_R2) * ink;
           }
 
-          // Tooth, in two octaves — a coarse weave under a fine grain.
+          // Tooth, in two octaves - a coarse weave under a fine grain.
           //
           // Inlined deliberately, and measured. Value noise is a bilinear
           // patch, so its exact partials fall out of the four corner hashes
@@ -305,14 +322,14 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
             - (qgx + qgy) * 0.16 * V.relief;
 
           // Specular. Where the tooth tilts toward the light it does not just
-          // get brighter in proportion — it glints, and that non-linearity is
+          // get brighter in proportion - it glints, and that non-linearity is
           // most of what separates a surface from a gradient.
           if (litc > 0) {
             const sc = litc > 1 ? 1 : litc;
             tex += sc * sc * sc * V.spec;
           }
 
-          // edge fall-off. r^4 from squared distance — no hypot, no pow, and
+          // edge fall-off. r^4 from squared distance - no hypot, no pow, and
           // it keeps the middle of the sheet clean.
           const dx = x - cxp;
           const r2 = (dx * dx + dy * dy) / maxR2;
@@ -322,7 +339,7 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
           let G = bg * (1 + dev) + dev * liftG;
           let B = bb * (1 + dev) + dev * liftB;
           // Where the pulp is denser the sheet takes on the colour of the
-          // pulp, not just less light — scaling one hue up and down gives a
+          // pulp, not just less light - scaling one hue up and down gives a
           // grey sheet, and real stock warms as it thickens. The vignette is
           // deliberately excluded: that is illumination falling off, which is
           // neutral, and tinting it turned the corners of the page brown.
@@ -342,14 +359,21 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
           const o = (py * cw + pxi) * 4;
           px[o] = R; px[o + 1] = G; px[o + 2] = B; px[o + 3] = 255;
         }
+        if (performance.now() > until) { py++; yieldTo(slice); return; }
       }
+      finish();
+      };
+
+      const finish = () => {
+      canvas.width = cw;
+      canvas.height = chh;
       ctx.putImageData(img, 0, 0);
 
       // --- inclusions, drawn over the field in CSS coordinates -------------
       ctx.setTransform(S, 0, 0, S, 0, 0);
 
       // Individual fibres suspended in the stock. Short, curved, some lighter
-      // than the ground and some darker — this is what separates thick
+      // than the ground and some darker - this is what separates thick
       // handmade paper from a smooth machine sheet.
       const nf = Math.round((w * h) / 11000 * V.fibres);
       ctx.lineCap = 'round';
@@ -374,7 +398,7 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
         ctx.stroke();
       }
 
-      // Specks — the impurities that never got screened out of the pulp.
+      // Specks - the impurities that never got screened out of the pulp.
       const ns = Math.round((w * h) / 30000 * V.specks);
       for (let i = 0; i < ns; i++) {
         const sx = hash2(i * 41 + 8, 71) * w;
@@ -384,7 +408,7 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
         ctx.fillRect(sx, sy, s, s * (0.7 + hash2(i * 3 + 2, 31) * 0.8));
       }
 
-      // Foxing — the sparse blooms of aged paper, at very low alpha.
+      // Foxing - the sparse blooms of aged paper, at very low alpha.
       const nfox = Math.round((w * h) / 26000 * V.foxing);
       for (let i = 0; i < nfox; i++) {
         const fx = hash2(i * 7 + 1, 13) * w;
@@ -400,12 +424,15 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
         ctx.fill();
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
+      };
+
+      slice();
     };
 
     let qt = 0;
     const paint = () => { raf = 0; clearTimeout(qt); qt = 0; render(); };
     // requestAnimationFrame never fires in a tab that is not being rendered,
-    // and this canvas has to exist whether or not anyone watched it appear —
+    // and this canvas has to exist whether or not anyone watched it appear -
     // a hidden tab that is resized and then looked at must not show a blank
     // sheet. Every deferred paint here carries a timer behind it.
     const queue = () => {
@@ -430,16 +457,21 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
       render();
     };
 
-    // A scoped sheet is below the fold at load; generating it there would
-    // just compete with first paint for a surface nobody is looking at yet.
-    let first = 0;
-    if (scoped) first = setTimeout(() => { resize(); if (!w || !h) queue(); }, 380);
+    // A scoped sheet is below the fold AND behind an opaque curtain at load.
+    // Generating it there costs ~125ms of synchronous main-thread time inside
+    // the window the loader is animating in, for a surface nobody can see.
+    let first = () => {};
+    let ready = !scoped;
+    if (scoped) first = afterBoot(() => { ready = true; resize(); if (!w || !h) queue(); }, 700);
     else { resize(); if (!w || !h) queue(); }
 
     // Regenerating the sheet is a full-viewport per-pixel pass, and a window
     // drag fires ResizeObserver on every frame. Debounce, or the drag stalls.
     let rt = 0;
+    // The observer reports once on observe(). Unguarded, that report built the
+    // scoped sheet at mount and undid its deferral.
     const ro = new ResizeObserver(() => {
+      if (!ready) return;
       clearTimeout(rt);
       rt = setTimeout(resize, 160);
     });
@@ -452,7 +484,9 @@ export default function PaperSurface({ scoped = false, prefix = 'paper' }) {
       mo.disconnect();
       clearTimeout(rt);
       clearTimeout(qt);
-      clearTimeout(first);
+      first();
+      generation++;          // abandons any sheet still being sliced
+      chan.port1.close();
       cancelAnimationFrame(raf);
     };
   }, [scoped, prefix]);

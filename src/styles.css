@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------
-   Portfolio v21 — React build
+   Portfolio v21 - React build
    Palette tokens live in src/theme.js and are set on :root at runtime.
    --------------------------------------------------------------- */
 
@@ -14,7 +14,7 @@ html {
 
 body {
   /* No background here: .tex sits at z-index:-2, and negative-z descendants
-     paint BEFORE block-level backgrounds — a background on body would cover
+     paint BEFORE block-level backgrounds - a background on body would cover
      the whole texture stack. The page ground is carried by html instead. */
   background: transparent;
   color: var(--fg);
@@ -68,8 +68,8 @@ a:hover { color: var(--accent); }
 .accent { color: var(--accent); }
 
 /* --- the assemble ------------------------------------------------
-   One motion for the whole portfolio. Every block is held scattered —
-   dropped, scaled back and defocused — and composes into place when it is
+   One motion for the whole portfolio. Every block is held scattered -
+   dropped, scaled back and defocused - and composes into place when it is
    released: by the boot curtain on the first screen, by scroll below it.
    The transition lives on `.in` so this is an entrance only; nothing ever
    animates back out. --d is the per-element beat. */
@@ -109,13 +109,13 @@ a:hover { color: var(--accent); }
 /* Specular sweep. useTilt writes --sx/--sy as the pointer crosses the card,
    and this is the highlight that slides after it. Without it a tilting card
    reads as a rectangle being rotated; with it, as a solid catching the light.
-   Same transform either way — the difference is entirely the lighting. */
+   Same transform either way - the difference is entirely the lighting. */
 .card::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
-  /* It sits above the card's own text — a pseudo-element cannot go behind it
+  /* It sits above the card's own text - a pseudo-element cannot go behind it
      without a stacking context, and every way of forcing one here flattens
      the preserve-3d the [data-layer] parallax depends on. So the alpha is
      kept low enough that the type under the pointer stays ink rather than
@@ -171,7 +171,7 @@ a:hover { color: var(--accent); }
 /* --- paper / field texture --- */
 .tex { position: fixed; inset: 0; z-index: -2; pointer-events: none; opacity: var(--tex-alpha, .3); }
 .tex > div, .tex-in > div { position: absolute; inset: 0; }
-/* The sheet darkens toward its edges. This was an empty div before — the
+/* The sheet darkens toward its edges. This was an empty div before - the
    class had no rule at all, so the page had no edge at all. */
 .tex-vig {
   background-image: radial-gradient(128% 96% at 50% 38%, transparent 44%, var(--vig) 100%);
@@ -420,7 +420,7 @@ a:hover { color: var(--accent); }
 .navlink[data-on='1'] { color: var(--accent); }
 
 /* --- availability light ------------------------------------------
-   A steady core under two expanding rings on an offset cycle — the cadence
+   A steady core under two expanding rings on an offset cycle - the cadence
    of a status LED. Green in both schemes and deliberately not the accent:
    "available" has to read the same whichever accent is chosen. */
 .avail {
@@ -495,6 +495,8 @@ a:hover { color: var(--accent); }
   transition: opacity .52s ease, visibility .52s;
 }
 html[data-boot='done'] .boot { opacity: 0; visibility: hidden; }
+.boot-stage { display: flex; flex-direction: column; align-items: center; gap: 34px; }
+.boot-globe { display: block; }
 .boot-mark { display: flex; align-items: center; gap: 20px; color: var(--muted); }
 .boot-rule { position: relative; display: block; width: 132px; height: 1px; background: var(--rule); overflow: hidden; }
 .boot-rule i { position: absolute; inset: 0; background: var(--accent); transform: scaleX(0); transform-origin: 0 50%; animation: bootRun 1.5s cubic-bezier(.4,0,.2,1) forwards; }
@@ -533,7 +535,7 @@ html[data-boot='done'] .boot { opacity: 0; visibility: hidden; }
 
 /* --- sequence numerals ---------------------------------------------
    Only where the content genuinely is a sequence. Work and project ids
-   (W—05, P—002) stay mono: those are identifiers, not a count. */
+   (W-05, P-002) stay mono: those are identifiers, not a count. */
 .cellnum {
   font-family: var(--font-display);
   font-style: italic;
@@ -544,6 +546,54 @@ html[data-boot='done'] .boot { opacity: 0; visibility: hidden; }
   color: var(--accent);
   display: inline-block;
 }
+
+/* --- capability plates -----------------------------------------------
+   A dot screen behind each column's header, masked out before the list so
+   the list reads on clean paper. Before this only column 01 had a texture,
+   and it ran uniformly behind the list text too. */
+.cap-plate { position: relative; }
+.cap-plate > * { position: relative; }
+.cap-plate::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 -4px;
+  pointer-events: none;
+  background-image: radial-gradient(color-mix(in srgb, var(--fg) 24%, transparent) 1px, transparent 1.2px);
+  background-size: 6px 6px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,.4) 30%, transparent 52%);
+  mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,.4) 30%, transparent 52%);
+  opacity: .5;
+  transition: opacity .5s ease;
+}
+.cap-plate:hover::before { opacity: 1; }
+
+
+.cap-list { list-style: none; margin: 16px 0 0; padding: 0; }
+.cap-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px dashed var(--hair);
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  transition: color .3s ease;
+}
+.cap-item:last-child { border-bottom: 1px dashed var(--hair); }
+.cap-item::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  /* --rule alone is ~20 levels off the paper and the ticks vanished into it */
+  border: 1px solid color-mix(in srgb, var(--fg) 38%, transparent);
+  transition: background-color .3s ease, border-color .3s ease;
+  transition-delay: calc(var(--k, 0) * 40ms);
+}
+.cap-plate:hover .cap-item::before { background-color: var(--accent); border-color: var(--accent); }
+.cap-item:hover { color: var(--fg); }
 
 /* --- halftone dot-matrix in the primary CTA ------------------------
    Borrowed from ourselves rather than from anyone else: the wordmark and
@@ -559,12 +609,15 @@ html[data-boot='done'] .boot { opacity: 0; visibility: hidden; }
   overflow: hidden;
 }
 .cta-label { display: inline-flex; align-items: center; gap: 16px; padding-right: 18px; }
+/* The dot matrix is a canvas now: the arrow is not a shape moving over the
+   field, it is the field's own dots lighting up and decaying behind it. See
+   DotArrow.jsx for why the two CSS-only attempts were abandoned. */
 .dotmx {
-  width: 58px;
-  align-self: stretch;
-  background-image: radial-gradient(currentColor 1.1px, transparent 1.1px);
-  background-size: 5px 5px;
-  opacity: .45;
+  display: block;
+  width: 64px;
+  height: 48px;   /* matches .cta-solid; the canvas reads this, never sets it */
+  align-self: center;
+  flex: none;
 }
 
 /* --- reduced motion --- */

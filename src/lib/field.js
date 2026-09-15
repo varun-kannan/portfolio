@@ -4,7 +4,7 @@
  * One copy, deliberately. The hash below was written three times in this
  * project and carried the same defect in each: with plain `*` the
  * intermediate products overflow into float, lose their low bits, and the
- * following coercion to int32 clips the top bit — the result only ever
+ * following coercion to int32 clips the top bit - the result only ever
  * covers [0, 0.5] with a mean of 0.25 instead of [0, 1] with a mean of 0.5.
  * Fixing it twice was enough.
  */
@@ -28,7 +28,7 @@ export function smoothNoise(x, y) {
  *
  * Neighbours read the same smooth field, so they leave in similar
  * directions and the mark breaks into drifting clusters. Math.random() here
- * would average out to uniform fuzz — every dot its own direction is the
+ * would average out to uniform fuzz - every dot its own direction is the
  * same as no direction at all.
  */
 export function scatter(x, y, near = 70, spread = 200) {
@@ -39,3 +39,29 @@ export function scatter(x, y, near = 70, spread = 200) {
 
 /** Ease-out cubic: fast departure, long settle. */
 export const easeOut = (p) => 1 - (1 - p) * (1 - p) * (1 - p);
+
+/**
+ * Run heavy one-time work after the boot curtain has lifted.
+ *
+ * The generated sheets and the screened globe each cost on the order of a
+ * hundred milliseconds of synchronous main-thread time. Running them at mount
+ * puts all of that inside the window the loader is animating in, and the
+ * loader loses a third of its frames to work the viewer cannot even see yet,
+ * because it is all below the fold behind an opaque curtain.
+ *
+ * `delay` staggers the callers so they do not simply collide with each other
+ * the instant the curtain goes. Returns a cancel function.
+ */
+export function afterBoot(fn, delay = 0) {
+  let t = 0;
+  const run = () => { t = setTimeout(fn, delay); };
+  if (document.documentElement.getAttribute('data-boot') === 'done') {
+    run();
+    return () => clearTimeout(t);
+  }
+  const on = () => { removeEventListener('boot:done', on); clearTimeout(t); run(); };
+  addEventListener('boot:done', on);
+  // never let visible content wait on a signal that might not arrive
+  t = setTimeout(() => { removeEventListener('boot:done', on); fn(); }, 4000);
+  return () => { removeEventListener('boot:done', on); clearTimeout(t); };
+}
